@@ -181,20 +181,29 @@ class DurableRuntime:
     def get(self, idempotency_key: str) -> ExecutionRecord | None:
         return self.storage.load(idempotency_key)
 
-    def recover(self) -> list[ExecutionRecord]:
+    def recover(self, wait: bool = True) -> list[ExecutionRecord]:
         """On startup: resume or explicitly reject interrupted executions.
 
-        Returns the affected records.  Records whose checkpoint is missing
-        or version-incompatible, or whose function is unregistered, are
-        moved to the terminal FAILED state with a distinguishable reason
-        (never silently rerun from scratch or skipped).
+        Returns the affected (resumed) records.  Records whose checkpoint
+        is missing or version-incompatible, or whose function is
+        unregistered, are moved to the terminal FAILED state with a
+        distinguishable reason (never silently rerun from scratch or
+        skipped).  With ``wait=True`` (default) blocks until the resumed
+        executions reach a terminal state.
         """
         affected: list[ExecutionRecord] = []
+        futures: list[Future] = []
         records = self.storage.list_incomplete()
         logger.info("recovery scan: %d interrupted execution(s)", len(records))
         for record in records:
             if self._resume_or_reject(record):
                 affected.append(record)
+                fut = self._inflight.get(record.idempotency_key)
+                if fut is not None:
+                    futures.append(fut)
+        if wait:
+            for fut in futures:
+                fut.result()
         return affected
 
     def shutdown(self) -> None:
