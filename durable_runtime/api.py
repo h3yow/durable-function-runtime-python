@@ -11,6 +11,7 @@ Endpoints:
 from __future__ import annotations
 
 import logging
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
@@ -56,17 +57,15 @@ def create_app(db_path: str = "runtime.db",
         execution_timeout=execution_timeout,
         checkpoint_version=checkpoint_version)
 
-    app = FastAPI(title="durable-function-runtime")
-    app.state.runtime = runtime
-
-    @app.on_event("startup")
-    def _recover() -> None:
+    @asynccontextmanager
+    async def _lifespan(app: FastAPI):
         affected = runtime.recover()
         logger.info("startup recovery: %d execution(s) resumed", len(affected))
-
-    @app.on_event("shutdown")
-    def _shutdown() -> None:
+        yield
         runtime.shutdown()
+
+    app = FastAPI(title="durable-function-runtime", lifespan=_lifespan)
+    app.state.runtime = runtime
 
     @app.post("/invoke", status_code=200)
     def invoke(req: InvokeRequest) -> dict:
