@@ -10,6 +10,13 @@ dependencies = [
 url = "https://mirrors.aliyun.com/pypi/simple/"
 default = true
 
+[tool.pytest.ini_options]
+# Surface runtime logs (invocation ids, state transitions, retry records)
+# directly in the test output.
+log_cli = true
+log_cli_level = "INFO"
+log_cli_format = "%(levelname)-7s %(name)s %(message)s"
+
 [dependency-groups]
 dev = [
     "pytest>=9.1.1",
