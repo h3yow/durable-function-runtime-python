@@ -89,6 +89,10 @@ class ExecutionContext:
         logger.info("[%s] step#%d %s execute",
                     self._record.idempotency_key, idx, name)
         value = fn()
+        if self._runtime._deadline_exceeded(self._record):
+            # The step's side effect already happened, but the execution as
+            # a whole is out of time: do not commit further progress.
+            raise ExecutionTimedOut()
         self._record.checkpoint_data[key] = value
         self._record.checkpoint_step = idx
         self._runtime._persist(self._record)
@@ -232,6 +236,8 @@ class DurableRuntime:
                 ctx = ExecutionContext(self, record)
                 try:
                     result = self._functions[record.function_name](ctx, record.payload)
+                    if self._deadline_exceeded(record):
+                        raise ExecutionTimedOut()
                 except ExecutionTimedOut:
                     self._transition(record, ExecutionStatus.TIMED_OUT,
                                      error="execution deadline exceeded")
