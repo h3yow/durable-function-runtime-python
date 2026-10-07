@@ -12,8 +12,10 @@ class ExecutionStatus(str, enum.Enum):
     SUCCEEDED = "succeeded"
     FAILED_RETRYABLE = "failed_retryable"   # transient state, will retry
     FAILED = "failed"                       # terminal: retries exhausted
-    REJECTED = "rejected"                   # terminal: never accepted
-    TIMED_OUT = "timed_out"                 # terminal: deadline exceeded
+    REJECTED = "rejected"                   # terminal: not accepted (transient:
+                                            #   the same key may be resubmitted)
+    TIMED_OUT = "timed_out"                 # terminal: time budget exhausted
+    CANCELLED = "cancelled"                 # terminal: withdrawn by the caller
 
 
 class ErrorKind(str, enum.Enum):
@@ -28,6 +30,21 @@ class RetryableError(Exception):
 
 class NonRetryableError(Exception):
     """Raise from a function to fail terminally without retries."""
+
+
+class StepTimedOutError(Exception):
+    """A durable step exceeded its per-step time limit.
+
+    Classified as retryable: the step is not checkpointed, so the next
+    attempt re-executes it (already-checkpointed steps still replay).
+    """
+
+    def __init__(self, step_name: str, limit_seconds: float) -> None:
+        super().__init__(
+            f"step {step_name!r} exceeded its time limit of "
+            f"{limit_seconds:.3f}s")
+        self.step_name = step_name
+        self.limit_seconds = limit_seconds
 
 
 class RecoveryError(Exception):

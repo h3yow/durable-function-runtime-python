@@ -1,11 +1,11 @@
 """FastAPI surface for the durable runtime.
 
 Endpoints:
-  POST /functions            register a demo/builtin function is not
-                             possible over HTTP; functions are registered
-                             in code.  This API exposes invocation & query.
-  POST /invoke               body: {function, idempotency_key, payload}
+  POST /invoke               body: {function, idempotency_key, payload,
+                             wait_timeout?, timeout?}  (timeout = per-call
+                             time budget; 429 + reason when rejected)
   GET  /executions/{key}     query the current/terminal state
+  POST /executions/{key}/cancel   withdraw a queued/running call (idempotent)
   POST /admin/recover        rescan interrupted executions (also runs at startup)
 """
 from __future__ import annotations
@@ -29,6 +29,9 @@ class InvokeRequest(BaseModel):
     idempotency_key: str
     payload: dict = {}
     wait_timeout: float | None = 30.0
+    # Per-call time budget (seconds): queueing + backoff waits + execution.
+    # Falls back to the server-wide execution_timeout when omitted.
+    timeout: float | None = None
 
 
 def _record_view(rec: ExecutionRecord) -> dict:
@@ -50,12 +53,14 @@ def create_app(db_path: str = "runtime.db",
                max_concurrency: int = 4,
                max_queue: int = 16,
                execution_timeout: float | None = 30.0,
-               checkpoint_version: int = 1) -> FastAPI:
+               checkpoint_version: int = 1,
+               quotas: dict[str, int] | None = None) -> FastAPI:
     runtime = DurableRuntime(
         Storage(db_path), retry_policy=retry_policy,
         max_concurrency=max_concurrency, max_queue=max_queue,
         execution_timeout=execution_timeout,
-        checkpoint_version=checkpoint_version)
+        checkpoint_version=checkpoint_version,
+        quotas=quotas)
 
     @asynccontextmanager
     async def _lifespan(app: FastAPI):
@@ -71,13 +76,22 @@ def create_app(db_path: str = "runtime.db",
     def invoke(req: InvokeRequest) -> dict:
         try:
             rec = runtime.invoke(req.function, req.idempotency_key,
-                                 req.payload, wait_timeout=req.wait_timeout)
+                                 req.payload, wait_timeout=req.wait_timeout,
+                                 timeout=req.timeout)
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc))
         except RejectedError as exc:
-            # 429 + distinguishable reason; the record is queryable as REJECTED
+            # 429 + distinguishable reason; the record is queryable as
+            # REJECTED and the same key may be resubmitted later
             raise HTTPException(status_code=429,
                                 detail=f"rejected:{exc.reason.value}")
+        return _record_view(rec)
+
+    @app.post("/executions/{key}/cancel")
+    def cancel_execution(key: str) -> dict:
+        rec = runtime.cancel(key)
+        if rec is None:
+            raise HTTPException(status_code=404, detail="unknown idempotency key")
         return _record_view(rec)
 
     @app.get("/executions/{key}")

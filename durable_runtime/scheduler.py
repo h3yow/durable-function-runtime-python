@@ -14,7 +14,8 @@ from typing import Callable
 
 
 class RejectedReason(str, enum.Enum):
-    QUEUE_FULL = "queue_full"
+    QUEUE_FULL = "queue_full"            # capacity: no queue permit available
+    QUOTA_EXCEEDED = "quota_exceeded"    # quota: acceptance budget used up
 
 
 class RejectedError(Exception):

@@ -84,6 +84,20 @@ class Storage:
             ).fetchall()
         return [self._to_record(r) for r in rows]
 
+    def count_accepted(self, function_name: str) -> int:
+        """Invocations of ``function_name`` that were admitted (not rejected).
+
+        Rejected records never consumed capacity, so they do not count
+        against the per-function quota.
+        """
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT COUNT(*) FROM executions "
+                "WHERE function_name = ? AND status != ?",
+                (function_name, ExecutionStatus.REJECTED.value),
+            ).fetchone()
+        return int(row[0])
+
     @staticmethod
     def _to_row(rec: ExecutionRecord) -> dict:
         return {
