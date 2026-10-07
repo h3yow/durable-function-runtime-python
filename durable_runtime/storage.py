@@ -84,6 +84,15 @@ class Storage:
             ).fetchall()
         return [self._to_record(r) for r in rows]
 
+    def count_accepted(self) -> int:
+        """Invocations that were accepted (rejections never consumed quota)."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT COUNT(*) FROM executions WHERE status != ?",
+                (ExecutionStatus.REJECTED.value,),
+            ).fetchone()
+        return int(row[0])
+
     @staticmethod
     def _to_row(rec: ExecutionRecord) -> dict:
         return {

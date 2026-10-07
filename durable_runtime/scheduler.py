@@ -14,11 +14,17 @@ from typing import Callable
 
 
 class RejectedReason(str, enum.Enum):
-    QUEUE_FULL = "queue_full"
+    QUEUE_FULL = "queue_full"                # transient: capacity exhausted now
+    QUOTA_EXHAUSTED = "quota_exhausted"      # invocation quota spent
 
 
 class RejectedError(Exception):
-    """The call was not accepted because the bounded queue is full."""
+    """The call was not accepted this time.
+
+    Rejection is transient: it never burns the idempotency key.  The same
+    key may be resubmitted later (e.g. after capacity frees up) and will be
+    accepted as a fresh invocation.
+    """
 
     def __init__(self, reason: RejectedReason) -> None:
         super().__init__(reason.value)

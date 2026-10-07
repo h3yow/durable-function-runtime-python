@@ -12,8 +12,10 @@ class ExecutionStatus(str, enum.Enum):
     SUCCEEDED = "succeeded"
     FAILED_RETRYABLE = "failed_retryable"   # transient state, will retry
     FAILED = "failed"                       # terminal: retries exhausted
-    REJECTED = "rejected"                   # terminal: never accepted
+    REJECTED = "rejected"                   # terminal: not accepted (transient:
+                                            #   the same key may be resubmitted)
     TIMED_OUT = "timed_out"                 # terminal: deadline exceeded
+    CANCELLED = "cancelled"                 # terminal: withdrawn by the caller
 
 
 class ErrorKind(str, enum.Enum):
